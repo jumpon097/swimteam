@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SWIMMING TEAM</title>
+    
+    <!-- ลิงก์ไปยังไฟล์ Manifest ตัวจริง -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="https://img1.pic.in.th/images/jors-logo.jpg">
+    <link rel="apple-touch-icon" href="https://img1.pic.in.th/images/jors-logo.jpg">
+    <meta name="theme-color" content="#0369a1">
+    
+    <!-- นำเข้า Tailwind CSS และ FontAwesome สำหรับการตกแต่ง Pop-up -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden; /* ป้องกันการเลื่อนซ้ำซ้อนด้านนอก */
+            background-color: #f8fafc;
+            font-family: 'Sarabun', sans-serif;
+        }
+        iframe {
+            width: 100%;
+            height: 100vh;
+            border: none;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <!-- เว็บแอปหลักที่ดึงมาจาก Google Apps Script -->
+    <iframe src="https://script.google.com/macros/s/AKfycbyiKfgDLzlVqcnjkTgWWnpnAjix_4PBVXhhupsrPf4vnCO9fyAcquyDNhUWETtBn3s/exec"></iframe>
+
+    <!-- Popup แนะนำการติดตั้ง (ครอบทับ iframe) -->
+    <div id="install-popup" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity duration-300 opacity-0">
+        <div id="install-modal-content" class="bg-white w-full sm:w-96 p-6 pb-8 sm:pb-6 rounded-t-3xl sm:rounded-2xl shadow-2xl transform translate-y-full sm:translate-y-0 transition-transform duration-300 ease-out">
+            <div class="flex justify-between items-start mb-4 border-b border-gray-100 pb-3">
+                <div class="flex items-center gap-3">
+                    <img src="https://img1.pic.in.th/images/jors-logo.jpg" class="w-12 h-12 rounded-xl shadow-sm border border-gray-200" alt="Logo">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800 leading-tight">SWIMMING TEAM</h3>
+                        <p class="text-xs text-sky-600 font-medium">แอปพลิเคชันสำหรับสมาชิก</p>
+                    </div>
+                </div>
+                <button id="close-install-btn" class="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center transition">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <!-- พื้นที่แสดงข้อความคำแนะนำ (จะเปลี่ยนไปตาม OS อัตโนมัติ) -->
+            <div id="install-instructions" class="text-sm text-gray-700 space-y-3">
+                <!-- โค้ด JS จะมาแทรกเนื้อหาที่นี่ -->
+            </div>
+
+            <!-- ปุ่มติดตั้งสำหรับ Android (iOS จะถูกซ่อนไว้) -->
+            <button id="action-install-btn" class="mt-5 w-full bg-sky-700 hover:bg-sky-800 transition text-white font-bold py-3.5 rounded-xl shadow-md hidden flex justify-center items-center gap-2">
+                <i class="fas fa-download"></i> ติดตั้งแอปทันที
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 1. ลงทะเบียน Service Worker จากไฟล์ sw.js
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                if (window.location.protocol === 'https:' || window.location.protocol === 'http:') {
+                    navigator.serviceWorker.register('sw.js')
+                        .then(reg => console.log('Service Worker Registered!', reg.scope))
+                        .catch(err => console.log('Service Worker Note:', err.message));
+                }
+            });
+        }
+
+        // 2. Logic การทำงานของ Pop-up ติดตั้ง
+        const installPopup = document.getElementById('install-popup');
+        const modalContent = document.getElementById('install-modal-content');
+        const closeBtn = document.getElementById('close-install-btn');
+        const installInstructions = document.getElementById('install-instructions');
+        const actionInstallBtn = document.getElementById('action-install-btn');
+
+        let deferredPrompt;
+
+        // ตรวจสอบว่าแอปถูกติดตั้งไปแล้วหรือยัง (Standalone Mode)
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone || document.referrer.includes('android-app://');
+
+        // ตรวจสอบระบบปฏิบัติการว่าเป็น iOS หรือไม่
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+        // ฟังก์ชันเปิด Pop-up พร้อมแอนิเมชัน
+        function showPopup() {
+            // ถ้าแอปติดตั้งแล้ว หรือผู้ใช้เคยกดกากบาทปิดไปแล้ว จะไม่เด้งกวนใจอีก
+            if (isStandalone || localStorage.getItem('hideJorsInstallPopup')) return;
+            
+            installPopup.classList.remove('hidden');
+            setTimeout(() => {
+                installPopup.classList.remove('opacity-0');
+                modalContent.classList.remove('translate-y-full');
+            }, 50); // delay นิดหน่อยให้ CSS Transition ทำงาน
+        }
+
+        // ฟังก์ชันปิด Pop-up พร้อมจำค่าไว้
+        function hidePopup() {
+            installPopup.classList.add('opacity-0');
+            modalContent.classList.add('translate-y-full');
+            setTimeout(() => {
+                installPopup.classList.add('hidden');
+            }, 300);
+            // จำไว้ใน LocalStorage ว่ากดปิดไปแล้ว จะไม่เด้งอีก
+            localStorage.setItem('hideJorsInstallPopup', 'true');
+        }
+
+        closeBtn.addEventListener('click', hidePopup);
+
+        // --- ตั้งค่าเนื้อหา Pop-up แยกตาม OS ---
+        if (isIOS) {
+            // สำหรับ iPhone / iPad (ผู้ใช้ต้องกดปุ่ม Share เองเท่านั้น Apple บล็อกปุ่มติดตั้ง)
+            installInstructions.innerHTML = `
+                <p class="font-medium text-gray-800">เพิ่มแอปนี้ลงในหน้าจอโฮมเพื่อการใช้งานที่สะดวกและเต็มจอ</p>
+                <div class="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    <ol class="list-decimal pl-4 space-y-3">
+                        <li>แตะปุ่ม <strong>แชร์</strong> 
+                            <svg class="inline-block w-5 h-5 text-blue-500 mx-1 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg> 
+                            ด้านล่างของ Safari
+                        </li>
+                        <li>เลื่อนลงแล้วเลือก <strong>"เพิ่มไปยังหน้าจอโฮม"</strong> <br/>
+                            <span class="text-xs text-gray-500">(Add to Home Screen <i class="far fa-plus-square mx-1"></i>)</span>
+                        </li>
+                        <li>แตะ <strong>"เพิ่ม"</strong> (Add) ที่มุมขวาบน</li>
+                    </ol>
+                </div>
+            `;
+            
+            // รอ 2 วินาทีหลังจากโหลดเว็บเสร็จ แล้วค่อยโชว์ Pop-up iOS
+            setTimeout(showPopup, 2000);
+
+        } else {
+            // สำหรับ Android, Chrome, Edge (รองรับปุ่มติดตั้งอัตโนมัติ)
+            installInstructions.innerHTML = `
+                <p class="font-medium text-gray-800 text-center mb-1">ติดตั้งแอปพลิเคชันลงบนอุปกรณ์ของคุณ</p>
+                <p class="text-xs text-gray-500 text-center mb-2">เพื่อการเข้าถึงที่รวดเร็ว ไม่ต้องพิมพ์ URL ใหม่ทุกครั้ง และสามารถใช้งานได้แบบเต็มหน้าจอ</p>
+            `;
+
+            // ดักรออีเวนต์พร้อมให้ติดตั้งจากเบราว์เซอร์ Android
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault(); // กันไม่ให้เบราว์เซอร์โชว์แถบด้านล่างแบบดิบๆ
+                deferredPrompt = e;
+                
+                // โชว์ปุ่มติดตั้งที่เราสร้างขึ้นเอง
+                actionInstallBtn.classList.remove('hidden');
+                
+                // โชว์ Pop-up ทันทีเมื่อระบบ Android พร้อม
+                setTimeout(showPopup, 1000);
+            });
+
+            // เมื่อกดปุ่มติดตั้งฝั่ง Android
+            actionInstallBtn.addEventListener('click', async () => {
+                if (deferredPrompt) {
+                    hidePopup(); // ปิด Pop-up ของเราไปก่อน
+                    deferredPrompt.prompt(); // สั่งเด้งหน้าต่างติดตั้งแท้ของเครื่อง
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log('ผลการติดตั้ง:', outcome);
+                    deferredPrompt = null;
+                }
+            });
+        }
+
+        // ดักอีเวนต์เมื่อติดตั้งเสร็จสมบูรณ์
+        window.addEventListener('appinstalled', () => {
+            console.log('ติดตั้งแอปสำเร็จ');
+            hidePopup();
+        });
+    </script>
+</body>
+</html>
